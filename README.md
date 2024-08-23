@@ -1,2 +1,9 @@
-# simple-data-infrastructure-docker-compose
-Docker Compose file for a simple data pipeline.
+# Simple Data Infrastructure Dockerfiles
+
+Docker Compose files for a simple data pipeline, intended for use by data engineering interview candidates.
+
+## Problem Statement
+
+Techncial interviews for systems candidates requires bootstrapping a lot of machinery and services.  
+
+## Usage:
