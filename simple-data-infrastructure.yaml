@@ -1,0 +1,133 @@
+services:
+  infra:
+    container_name: "infra-group-placeholder"
+    image: "busybox"  # TODO, find a smaller one that supports arm64
+    attach: false
+    entrypoint: "tail -f /dev/null"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+        restart: true      
+      postgres:
+        condition: service_healthy
+        restart: true
+      redis:
+        condition: service_started
+      kafka-ui:  # this will also start all the kafkas
+        condition: service_healthy
+        restart: true   
+
+  redis:
+    container_name: redis
+    image: "redis:alpine" 
+
+  # https://dev.to/titronium/clickhouse-server-in-1-minute-with-docker-4gf2
+  # https://hub.docker.com/r/clickhouse/clickhouse-server/
+  # OR https://hub.docker.com/r/bitnami/clickhouse
+  # OR https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/ch-and-postgres/docker-compose.yaml 
+  # OR https://github.com/rongfengliang/clickhouse-docker-compose
+
+  ## 
+  ## Exposes 
+  ## - 18123: http
+  ## - 19000: client
+  ## 
+  clickhouse:
+    container_name: clickhouse
+    image: "clickhouse/clickhouse-server"
+    user: "101:101"
+    hostname: clickhouse
+    environment:
+      CLICKHOUSE_DB: infra
+      CLICKHOUSE_USER: infra
+      CLICKHOUSE_PASSWORD: infra
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 26677
+        hard: 46677
+    
+    ports:
+      - "18123:8123"  # http
+      - "19000:9000"  # client
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8123/replicas_status"]
+      start_period: 5s
+      interval: 5s
+
+
+  # https://hub.docker.com/_/postgres
+  # https://www.docker.com/blog/how-to-use-the-postgres-docker-official-image/
+  postgres:
+    hostname: infra.postgres
+    image: postgres
+    #image: postgis/postgis # get postgis for free
+    container_name: postgres
+    restart: always
+    # set shared memory limit when using docker-compose
+    shm_size: 128mb
+    # or set shared memory limit when deploy via swarm stack
+    environment:
+      POSTGRES_USER:  infra
+      POSTGRES_PASSWORD: infra
+      POSTGRES_DB: infra
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "15432:5432"  # clients
+
+  ## 1 instance Kafka, running on Kraft
+  kafka-1:
+    image: 'bitnami/kafka:3.5.2'  # consider strimzi https://strimzi.io/
+    container_name: kafka-1
+    environment:
+      - KAFKA_ENABLE_KRAFT=yes
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_BROKER_ID=1
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka-1:9094
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka-1:9092
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_KRAFT_CLUSTER_ID=r4zt_wrqTRuT7W2NJsB_GA
+    healthcheck:
+      test: kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - 19192:9092
+
+  kafka-ui:
+    container_name: kafka-ui
+    image: 'provectuslabs/kafka-ui:latest'
+    ports:
+      - "19090:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS=kafka-1:9092
+      - KAFKA_CLUSTERS_0_NAME=r4zt_wrqTRuT7W2NJsB_GA
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider  http://localhost:8080/actuator/health
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+        restart: true   
+
+
+#volumes:
+  #infra-clickhouse:
+  #infra-postgres:
+  #infra-kafka:
+

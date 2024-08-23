@@ -1,0 +1,15 @@
+include:
+   - simple-data-infrastructure.yaml
+services:
+  web:
+    container_name: flaskapp
+    build: .
+    depends_on:
+      - infra
+    ports:
+      - "8000:5000"
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /code
